@@ -70,7 +70,7 @@ void sendSensorData() {
   if (temperature >= 30.0) {
     Blynk.logEvent(BLYNK_EVENT, "Peringatan: Suhu melebihi 30C!");
     Serial.println("Blynk event triggered.");
-  }fff
+  }
 
   // --- Update the LCD display ---
   lcd.clear();
