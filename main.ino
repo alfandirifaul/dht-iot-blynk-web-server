@@ -3,8 +3,9 @@
 // Define this to print debug output to Serial
 #define BLYNK_PRINT Serial
 
-#define BLYNK_TEMPLATE_ID "TMPL6lGs4z4wa"
-#define BLYNK_TEMPLATE_NAME "DHT"
+#define BLYNK_TEMPLATE_ID "TMPL68mZK1j9W"
+#define BLYNK_TEMPLATE_NAME "monitoring suhu dan kelembapan"
+#define BLYNK_AUTH_TOKEN "Jp-9sx7qKST5m5olUSYFeNbls1CRAs9Z"
 
 // Universal includes
 #include <DHT.h>
@@ -13,8 +14,9 @@
 #include <WebServer.h>
 #include <BlynkSimpleEsp32.h>
 
-// --- BLYNK CONFIGURATION ---
-char auth[] = "R5si49MDfzkhv7hodlmMDxZUZKnkiP5j";
+#define BLYNK_EVENT "suhu-maks"
+#define VPIN_SUHU V0
+#define VPIN_LEMBAP V1
 
 // --- WI-FI CREDENTIALS ---
 char home_ssid[] = "Mechatronics";
@@ -61,13 +63,13 @@ void sendSensorData() {
   Serial.println(humidity);
 
   // --- Send data to Blynk ---
-  Blynk.virtualWrite(V0, temperature); // V0 untuk Suhu
-  Blynk.virtualWrite(V1, humidity);    // V1 untuk Kelembapan
+  Blynk.virtualWrite(VPIN_SUHU, temperature); // V0 untuk Suhu
+  Blynk.virtualWrite(VPIN_LEMBAP, humidity);    // V1 untuk Kelembapan
 
   // --- Check temperature and trigger event if it exceeds 30°C ---
   if (temperature >= 30.0) {
-    Blynk.logEvent("temp-max", "Peringatan: Suhu melebihi 30C!");
-    Serial.println("Blynk event 'temp-max' triggered.");
+    Blynk.logEvent(BLYNK_EVENT, "Peringatan: Suhu melebihi 30C!");
+    Serial.println("Blynk event triggered.");
   }fff
 
   // --- Update the LCD display ---
@@ -166,7 +168,7 @@ void setup() {
   Serial.println(WiFi.softAPIP());
 
   // --- Blynk, Web Server, and Timer Setup ---
-  Blynk.config(auth);
+  Blynk.config(BLYNK_AUTH_TOKEN);
   
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
