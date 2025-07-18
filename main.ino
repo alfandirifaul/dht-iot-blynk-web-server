@@ -12,7 +12,12 @@
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <WiFiClientSecure.h>
 #include <BlynkSimpleEsp32.h>
+#include <UniversalTelegramBot.h>
+
+#define BOT_TELEGRAM "XXXXX"
+#define CHAT_ID "XXXXX"
 
 #define BLYNK_EVENT "suhu-maks"
 #define VPIN_SUHU V0
@@ -29,6 +34,8 @@ const char* ap_ssid = "DHT11_Sensor_AP";
 const char* ap_pass = "12345678";
 
 // --- GLOBAL OBJECTS ---
+WiFiClientSecure securedClient;
+UniversalTelegramBot bot(BOT_TELEGRAM, securedClient);
 DHT dht(DHTPIN, DHTTYPE);
 LiquidCrystal_I2C lcd(0x27, 16, 2); 
 WebServer server(80);
@@ -37,6 +44,18 @@ BlynkTimer timer;
 // Global variables to store sensor readings
 float temperature = 0.0;
 float humidity = 0.0;
+
+void handleTelegramMessage() {
+  // Define the alert message you want to send.
+  String message = "🔥 *Peringatan Suhu Tinggi!* 🔥\n\nSuhu saat ini adalah *" + String(temperature) + " °C*, melebihi batas maksimum (30 °C). Harap segera diperiksa!";
+  
+  // Send the message to your predefined Chat ID.
+  if (bot.sendMessage(CHAT_ID, message, "Markdown")) {
+    Serial.println("Telegram alert sent successfully!");
+  } else {
+    Serial.println("Failed to send Telegram alert.");
+  }
+}
 
 // --- SENSOR READING AND DATA SENDING FUNCTION ---
 void sendSensorData() {
@@ -70,6 +89,7 @@ void sendSensorData() {
   if (temperature >= 30.0) {
     Blynk.logEvent(BLYNK_EVENT, "Peringatan: Suhu melebihi 30C!");
     Serial.println("Blynk event triggered.");
+    handleTelegramMessage();
   }
 
   // --- Update the LCD display ---
