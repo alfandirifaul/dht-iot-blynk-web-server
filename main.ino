@@ -1,5 +1,3 @@
-
-
 // Define this to print debug output to Serial
 #define BLYNK_PRINT Serial
 
@@ -17,7 +15,7 @@
 #include <UniversalTelegramBot.h>
 
 #define BOT_TELEGRAM "7764599473:AAEmbBdVUvgBaYNA-MxrZGDvpOT8A2-fktU"
-#define CHAT_ID "7123768604"
+#define ADMIN_CHAT_ID "7123768604" // Diubah nama agar lebih jelas, ini untuk notifikasi suhu
 
 #define BLYNK_EVENT "suhu-maks"
 #define VPIN_SUHU V0
@@ -41,16 +39,47 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 WebServer server(80);
 BlynkTimer timer; 
 
+// --- VARIABEL BARU UNTUK TELEGRAM ---
+int botRequestDelay = 1000; // Cek pesan baru setiap 1 detik
+unsigned long lastTimeBotRan; // Waktu terakhir bot cek pesan
+
 // Global variables to store sensor readings
 float temperature = 0.0;
 float humidity = 0.0;
 
-void handleTelegramMessage() {
-  // Define the alert message you want to send.
+// --- FUNGSI BARU UNTUK MENANGANI PERINTAH DARI USER ---
+void handleNewMessages(int numNewMessages) {
+  Serial.println("handleNewMessages");
+  Serial.println(String(numNewMessages));
+
+  for (int i = 0; i < numNewMessages; i++) {
+    // Ambil chat_id dan teks dari user yang mengirim pesan
+    String chat_id = String(bot.messages[i].chat_id);
+    String text = bot.messages[i].text;
+    String from_name = bot.messages[i].from_name;
+
+    // Cetak ke Serial Monitor untuk debugging
+    Serial.println("Pesan diterima dari " + from_name + " (ID: " + chat_id + "): " + text);
+
+    // Periksa apakah pesan adalah "/check"
+    if (text == "/check") {
+      String message = "✅ *Laporan Status Terkini*\n\n";
+      message += "🌡️ *Suhu*: " + String(temperature, 1) + " °C\n";
+      message += "💧 *Kelembapan*: " + String(humidity, 1) + " %\n\n";
+      message += "_Data diambil secara real-time._";
+      
+      // Kirim balasan ke user yang bertanya
+      bot.sendMessage(chat_id, message, "Markdown");
+    }
+  }
+}
+
+// Fungsi ini sekarang hanya untuk mengirim notifikasi suhu tinggi ke admin
+void sendHighTempAlert() {
   String message = "🔥 *Peringatan Suhu Tinggi!* 🔥\n\nSuhu saat ini adalah *" + String(temperature) + " °C*, melebihi batas maksimum (30 °C). Harap segera diperiksa!";
   
-  // Send the message to your predefined Chat ID.
-  if (bot.sendMessage(CHAT_ID, message, "Markdown")) {
+  // Kirim pesan ke CHAT_ID admin yang sudah ditentukan
+  if (bot.sendMessage(ADMIN_CHAT_ID, message, "Markdown")) {
     Serial.println("Telegram alert sent successfully!");
   } else {
     Serial.println("Failed to send Telegram alert.");
@@ -63,16 +92,14 @@ void sendSensorData() {
   float h = dht.readHumidity();
   float t = dht.readTemperature();
 
-  // Check if any reads failed. If so, do nothing.
   if (isnan(h) || isnan(t)) {
     Serial.println("Failed to read from DHT sensor!");
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Sensor Error");
-    return; // Keluar dari fungsi jika sensor error
+    return;
   }
   
-  // Update global variables if read was successful
   humidity = h;
   temperature = t;
 
@@ -81,27 +108,22 @@ void sendSensorData() {
   Serial.print(" *C, Humidity: ");
   Serial.println(humidity);
 
-  // --- Send data to Blynk ---
-  Blynk.virtualWrite(VPIN_SUHU, temperature); // V0 untuk Suhu
-  Blynk.virtualWrite(VPIN_LEMBAP, humidity);    // V1 untuk Kelembapan
+  Blynk.virtualWrite(VPIN_SUHU, temperature);
+  Blynk.virtualWrite(VPIN_LEMBAP, humidity);
 
-  // --- Check temperature and trigger event if it exceeds 30°C ---
   if (temperature >= 30.0) {
     Blynk.logEvent(BLYNK_EVENT, "Peringatan: Suhu melebihi 30C!");
     Serial.println("Blynk event triggered.");
-    handleTelegramMessage();
+    sendHighTempAlert(); // Memanggil fungsi notifikasi admin
   }
 
   // --- Update the LCD display ---
   lcd.clear();
-  // Line 1: Temperature
   lcd.setCursor(0, 0);
   lcd.print("Suhu: ");
   lcd.print(temperature, 2);
-  lcd.print((char)223); // Degree symbol
+  lcd.print((char)223);
   lcd.print("C");
-
-  // Line 2: Humidity
   lcd.setCursor(0, 1);
   lcd.print("Lembap: ");
   lcd.print(humidity, 2);
@@ -156,20 +178,16 @@ void setup() {
   Serial.begin(115200);
   Serial.println("\nStarting DHT11 Monitoring System...");
 
-  secureClient.setInsecure();
+  securedClient.setInsecure();
 
-  // Initialize LCD
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Initializing...");
 
-  // Initialize DHT sensor
   dht.begin();
 
-  // --- Wi-Fi Setup (STA+AP Mode) ---
   WiFi.mode(WIFI_AP_STA);
-  // Connect to Home Wi-Fi (STA)
   WiFi.begin(home_ssid, home_pass);
   Serial.print("Connecting to Home Wi-Fi...");
   lcd.clear();
@@ -182,14 +200,12 @@ void setup() {
   Serial.print("IP Address (STA): ");
   Serial.println(WiFi.localIP());
 
-  // Start Access Point (AP)
   WiFi.softAP(ap_ssid, ap_pass);
   Serial.print("Access Point Started: ");
   Serial.println(ap_ssid);
   Serial.print("IP Address (AP): ");
   Serial.println(WiFi.softAPIP());
 
-  // --- Blynk, Web Server, and Timer Setup ---
   Blynk.config(BLYNK_AUTH_TOKEN);
   
   server.on("/", HTTP_GET, handleRoot);
@@ -197,18 +213,29 @@ void setup() {
   server.begin();
   Serial.println("HTTP server started.");
 
-  // Setup a timer to run the sendSensorData function every 2 seconds
   timer.setInterval(2000L, sendSensorData);
 
   lcd.clear();
   lcd.print("System Online!");
   lcd.setCursor(0, 1);
-  lcd.print(WiFi.localIP()); // Show IP for home network
+  lcd.print(WiFi.localIP());
 }
 
 // --- MAIN LOOP ---
 void loop() {
-  Blynk.run();      // Handles Blynk connection
-  server.handleClient(); // Handles incoming web requests
-  timer.run();      // Runs tasks scheduled by BlynkTimer
+  Blynk.run();
+  server.handleClient();
+  timer.run();
+
+  // --- BAGIAN BARU: Cek pesan baru dari Telegram secara berkala ---
+  if (millis() > lastTimeBotRan + botRequestDelay) {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+
+    while (numNewMessages) {
+      Serial.println("got response");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+    lastTimeBotRan = millis();
+  }
 }
