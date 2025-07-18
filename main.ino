@@ -16,8 +16,8 @@
 #include <BlynkSimpleEsp32.h>
 #include <UniversalTelegramBot.h>
 
-#define BOT_TELEGRAM "XXXXX"
-#define CHAT_ID "XXXXX"
+#define BOT_TELEGRAM "7764599473:AAEmbBdVUvgBaYNA-MxrZGDvpOT8A2-fktU"
+#define CHAT_ID "7123768604"
 
 #define BLYNK_EVENT "suhu-maks"
 #define VPIN_SUHU V0
@@ -155,6 +155,8 @@ void handleNotFound() {
 void setup() {
   Serial.begin(115200);
   Serial.println("\nStarting DHT11 Monitoring System...");
+
+  secureClient.setInsecure();
 
   // Initialize LCD
   lcd.init();
