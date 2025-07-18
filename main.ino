@@ -1,10 +1,3 @@
-// Define this to print debug output to Serial
-#define BLYNK_PRINT Serial
-
-#define BLYNK_TEMPLATE_ID "TMPL68mZK1j9W"
-#define BLYNK_TEMPLATE_NAME "monitoring suhu dan kelembapan"
-#define BLYNK_AUTH_TOKEN "Jp-9sx7qKST5m5olUSYFeNbls1CRAs9Z"
-
 // Universal includes
 #include <DHT.h>
 #include <LiquidCrystal_I2C.h>
@@ -16,10 +9,6 @@
 
 #define BOT_TELEGRAM "7764599473:AAEmbBdVUvgBaYNA-MxrZGDvpOT8A2-fktU"
 #define ADMIN_CHAT_ID "7123768604" // Diubah nama agar lebih jelas, ini untuk notifikasi suhu
-
-#define BLYNK_EVENT "suhu-maks"
-#define VPIN_SUHU V0
-#define VPIN_LEMBAP V1
 
 // --- WI-FI CREDENTIALS ---
 char home_ssid[] = "Mechatronics";
@@ -37,7 +26,6 @@ UniversalTelegramBot bot(BOT_TELEGRAM, securedClient);
 DHT dht(DHTPIN, DHTTYPE);
 LiquidCrystal_I2C lcd(0x27, 16, 2); 
 WebServer server(80);
-BlynkTimer timer; 
 
 // --- VARIABEL BARU UNTUK TELEGRAM ---
 int botRequestDelay = 1000; // Cek pesan baru setiap 1 detik
@@ -108,12 +96,7 @@ void sendSensorData() {
   Serial.print(" *C, Humidity: ");
   Serial.println(humidity);
 
-  Blynk.virtualWrite(VPIN_SUHU, temperature);
-  Blynk.virtualWrite(VPIN_LEMBAP, humidity);
-
   if (temperature >= 30.0) {
-    Blynk.logEvent(BLYNK_EVENT, "Peringatan: Suhu melebihi 30C!");
-    Serial.println("Blynk event triggered.");
     sendHighTempAlert(); // Memanggil fungsi notifikasi admin
   }
 
@@ -205,16 +188,12 @@ void setup() {
   Serial.println(ap_ssid);
   Serial.print("IP Address (AP): ");
   Serial.println(WiFi.softAPIP());
-
-  Blynk.config(BLYNK_AUTH_TOKEN);
   
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("HTTP server started.");
-
-  timer.setInterval(2000L, sendSensorData);
-
+  
   lcd.clear();
   lcd.print("System Online!");
   lcd.setCursor(0, 1);
@@ -223,7 +202,6 @@ void setup() {
 
 // --- MAIN LOOP ---
 void loop() {
-  Blynk.run();
   server.handleClient();
   timer.run();
 
