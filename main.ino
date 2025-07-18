@@ -1,14 +1,16 @@
+// Define this to print debug output to Serial
+#define BLYNK_PRINT Serial // Tetap bisa digunakan untuk Serial, atau dihapus
+
 // Universal includes
 #include <DHT.h>
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WiFiClientSecure.h>
-#include <BlynkSimpleEsp32.h>
 #include <UniversalTelegramBot.h>
 
 #define BOT_TELEGRAM "7764599473:AAEmbBdVUvgBaYNA-MxrZGDvpOT8A2-fktU"
-#define ADMIN_CHAT_ID "7123768604" // Diubah nama agar lebih jelas, ini untuk notifikasi suhu
+#define ADMIN_CHAT_ID "7123768604" 
 
 // --- WI-FI CREDENTIALS ---
 char home_ssid[] = "Mechatronics";
@@ -27,7 +29,11 @@ DHT dht(DHTPIN, DHTTYPE);
 LiquidCrystal_I2C lcd(0x27, 16, 2); 
 WebServer server(80);
 
-// --- VARIABEL BARU UNTUK TELEGRAM ---
+// --- PENGGANTI BLYNKTIMER ---
+unsigned long previousMillis = 0;
+const long interval = 2000; // Interval pembacaan sensor (2 detik)
+
+// Variabel untuk Telegram
 int botRequestDelay = 1000; // Cek pesan baru setiap 1 detik
 unsigned long lastTimeBotRan; // Waktu terakhir bot cek pesan
 
@@ -35,38 +41,28 @@ unsigned long lastTimeBotRan; // Waktu terakhir bot cek pesan
 float temperature = 0.0;
 float humidity = 0.0;
 
-// --- FUNGSI BARU UNTUK MENANGANI PERINTAH DARI USER ---
+// --- FUNGSI UNTUK MENANGANI PERINTAH DARI USER ---
 void handleNewMessages(int numNewMessages) {
-  Serial.println("handleNewMessages");
-  Serial.println(String(numNewMessages));
-
   for (int i = 0; i < numNewMessages; i++) {
-    // Ambil chat_id dan teks dari user yang mengirim pesan
     String chat_id = String(bot.messages[i].chat_id);
     String text = bot.messages[i].text;
     String from_name = bot.messages[i].from_name;
 
-    // Cetak ke Serial Monitor untuk debugging
-    Serial.println("Pesan diterima dari " + from_name + " (ID: " + chat_id + "): " + text);
-
-    // Periksa apakah pesan adalah "/check"
     if (text == "/check") {
       String message = "✅ *Laporan Status Terkini*\n\n";
       message += "🌡️ *Suhu*: " + String(temperature, 1) + " °C\n";
       message += "💧 *Kelembapan*: " + String(humidity, 1) + " %\n\n";
       message += "_Data diambil secara real-time._";
       
-      // Kirim balasan ke user yang bertanya
       bot.sendMessage(chat_id, message, "Markdown");
     }
   }
 }
 
-// Fungsi ini sekarang hanya untuk mengirim notifikasi suhu tinggi ke admin
+// Fungsi untuk mengirim notifikasi suhu tinggi ke admin
 void sendHighTempAlert() {
   String message = "🔥 *Peringatan Suhu Tinggi!* 🔥\n\nSuhu saat ini adalah *" + String(temperature) + " °C*, melebihi batas maksimum (30 °C). Harap segera diperiksa!";
   
-  // Kirim pesan ke CHAT_ID admin yang sudah ditentukan
   if (bot.sendMessage(ADMIN_CHAT_ID, message, "Markdown")) {
     Serial.println("Telegram alert sent successfully!");
   } else {
@@ -74,9 +70,8 @@ void sendHighTempAlert() {
   }
 }
 
-// --- SENSOR READING AND DATA SENDING FUNCTION ---
+// --- FUNGSI PEMBACAAN SENSOR ---
 void sendSensorData() {
-  // Read sensor values
   float h = dht.readHumidity();
   float t = dht.readTemperature();
 
@@ -96,11 +91,13 @@ void sendSensorData() {
   Serial.print(" *C, Humidity: ");
   Serial.println(humidity);
 
+  // Cek suhu dan kirim notifikasi jika melebihi batas
   if (temperature >= 30.0) {
-    sendHighTempAlert(); // Memanggil fungsi notifikasi admin
+    Serial.println("Suhu tinggi terdeteksi! Mengirim notifikasi...");
+    sendHighTempAlert();
   }
 
-  // --- Update the LCD display ---
+  // Update tampilan LCD
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Suhu: ");
@@ -193,24 +190,33 @@ void setup() {
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("HTTP server started.");
-  
+
   lcd.clear();
   lcd.print("System Online!");
   lcd.setCursor(0, 1);
   lcd.print(WiFi.localIP());
+  
+  Serial.println("\nMelakukan pembacaan sensor pertama...");
+  sendSensorData();
 }
 
 // --- MAIN LOOP ---
 void loop() {
+  // Menangani permintaan Web Server
   server.handleClient();
-  timer.run();
 
-  // --- BAGIAN BARU: Cek pesan baru dari Telegram secara berkala ---
+  // BARU: Logika waktu untuk membaca sensor setiap 2 detik
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    sendSensorData();
+  }
+
+  // Cek pesan baru dari Telegram secara berkala
   if (millis() > lastTimeBotRan + botRequestDelay) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
     while (numNewMessages) {
-      Serial.println("got response");
       handleNewMessages(numNewMessages);
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
