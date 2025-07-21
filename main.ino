@@ -1,7 +1,4 @@
-// Define this to print debug output to Serial
-#define BLYNK_PRINT Serial // Tetap bisa digunakan untuk Serial, atau dihapus
-
-// Universal includes
+// Include library universal
 #include <DHT.h>
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
@@ -9,39 +6,51 @@
 #include <WiFiClientSecure.h>
 #include <UniversalTelegramBot.h>
 
+// --- KONFIGURASI TELEGRAM ---
 #define BOT_TELEGRAM "7764599473:AAEmbBdVUvgBaYNA-MxrZGDvpOT8A2-fktU"
-#define ADMIN_CHAT_ID "7123768604" 
+#define ADMIN_CHAT_ID "7123768604"
 
-// --- WI-FI CREDENTIALS ---
+// --- KREDENSIAL WI-FI ---
 char home_ssid[] = "Mechatronics";
 char home_pass[] = "khususmeka";
 
-// --- SENSOR & AP CONFIGURATION ---
+// --- KONFIGURASI SENSOR & AP ---
 #define DHTPIN 19
 #define DHTTYPE DHT11
 const char* ap_ssid = "DHT11_Sensor_AP";
 const char* ap_pass = "12345678";
 
-// --- GLOBAL OBJECTS ---
+// --- OBJEK GLOBAL ---
 WiFiClientSecure securedClient;
 UniversalTelegramBot bot(BOT_TELEGRAM, securedClient);
 DHT dht(DHTPIN, DHTTYPE);
-LiquidCrystal_I2C lcd(0x27, 16, 2); 
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 WebServer server(80);
 
-// --- PENGGANTI BLYNKTIMER ---
+// --- TIMER ---
+// Timer untuk membaca data sensor
 unsigned long previousMillis = 0;
 const long interval = 2000; // Interval pembacaan sensor (2 detik)
 
-// Variabel untuk Telegram
-int botRequestDelay = 1000; // Cek pesan baru setiap 1 detik
-unsigned long lastTimeBotRan; // Waktu terakhir bot cek pesan
+// Timer untuk mengirim notifikasi suhu tinggi
+unsigned long previousAlertMillis = 0;
+const long alertInterval = 60000; // Interval notifikasi (60000 ms = 60 detik)
 
-// Global variables to store sensor readings
+// Timer untuk memeriksa pesan Telegram
+unsigned long lastTimeBotRan;
+int botRequestDelay = 1000; // Cek pesan baru setiap 1 detik
+
+// --- VARIABEL GLOBAL ---
+// Variabel global untuk menyimpan pembacaan sensor terakhir
 float temperature = 0.0;
 float humidity = 0.0;
 
-// --- FUNGSI UNTUK MENANGANI PERINTAH DARI USER ---
+// --- FUNGSI TELEGRAM ---
+
+/**
+ * @brief Menangani pesan baru yang masuk dari pengguna Telegram.
+ * @param numNewMessages Jumlah pesan baru yang diterima.
+ */
 void handleNewMessages(int numNewMessages) {
   for (int i = 0; i < numNewMessages; i++) {
     String chat_id = String(bot.messages[i].chat_id);
@@ -59,65 +68,73 @@ void handleNewMessages(int numNewMessages) {
   }
 }
 
-// Fungsi untuk mengirim notifikasi suhu tinggi ke admin
+/**
+ * @brief Mengirim pesan peringatan suhu tinggi ke ID chat admin.
+ */
 void sendHighTempAlert() {
-  String message = "🔥 *Peringatan Suhu Tinggi!* 🔥\n\nSuhu saat ini adalah *" + String(temperature) + " °C*, melebihi batas maksimum (30 °C). Harap segera diperiksa!";
+  String message = "🔥 *Peringatan Suhu Tinggi!* 🔥\n\nSuhu saat ini adalah *" + String(temperature, 1) + " °C*, melebihi batas maksimum (30 °C). Harap segera diperiksa!";
   
   if (bot.sendMessage(ADMIN_CHAT_ID, message, "Markdown")) {
-    Serial.println("Telegram alert sent successfully!");
+    Serial.println("Notifikasi Telegram berhasil dikirim!");
   } else {
-    Serial.println("Failed to send Telegram alert.");
+    Serial.println("Gagal mengirim notifikasi Telegram.");
   }
 }
 
-// --- FUNGSI PEMBACAAN SENSOR ---
-void sendSensorData() {
+// --- FUNGSI SENSOR ---
+
+/**
+ * @brief Membaca suhu dan kelembapan dari sensor DHT11 dan memperbarui variabel global.
+ */
+void readSensorData() {
   float h = dht.readHumidity();
   float t = dht.readTemperature();
 
+  // Periksa apakah pembacaan gagal dan keluar lebih awal (untuk mencoba lagi).
   if (isnan(h) || isnan(t)) {
-    Serial.println("Failed to read from DHT sensor!");
+    Serial.println("Gagal membaca dari sensor DHT!");
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Sensor Error");
     return;
   }
   
+  // Perbarui variabel global dengan pembacaan baru
   humidity = h;
   temperature = t;
 
-  Serial.print("Temperature: ");
-  Serial.print(temperature);
-  Serial.print(" *C, Humidity: ");
-  Serial.println(humidity);
+  Serial.print("Suhu: ");
+  Serial.print(temperature, 1);
+  Serial.print(" *C, Kelembapan: ");
+  Serial.print(humidity, 1);
+  Serial.println(" %");
 
-  // Cek suhu dan kirim notifikasi jika melebihi batas
-  if (temperature >= 30.0) {
-    Serial.println("Suhu tinggi terdeteksi! Mengirim notifikasi...");
-    sendHighTempAlert();
-  }
-
-  // Update tampilan LCD
+  // Perbarui tampilan LCD
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Suhu: ");
-  lcd.print(temperature, 2);
-  lcd.print((char)223);
+  lcd.print("Suhu:   ");
+  lcd.print(temperature, 1);
+  lcd.print((char)223); // Simbol derajat
   lcd.print("C");
   lcd.setCursor(0, 1);
   lcd.print("Lembap: ");
-  lcd.print(humidity, 2);
+  lcd.print(humidity, 1);
   lcd.print(" %");
 }
 
-// --- WEB PAGE HTML ---
+// --- HALAMAN WEB DAN SERVER ---
+
+/**
+ * @brief Membuat HTML untuk halaman web server.
+ * @return String yang berisi halaman HTML lengkap.
+ */
 String buildHtmlPage() {
   String html = "<!DOCTYPE html><html lang='en'>";
   html += "<head>";
   html += "<meta charset='UTF-8'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
   html += "<title>Monitoring Suhu dan Kelembapan</title>";
-  html += "<meta http-equiv='refresh' content='1'>"; 
+  html += "<meta http-equiv='refresh' content='2'>"; // Segarkan halaman setiap 2 detik
   html += "<style>";
   html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }";
   html += ".container { background-color: #ffffff; padding: 2rem 3rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }";
@@ -144,7 +161,6 @@ String buildHtmlPage() {
   return html;
 }
 
-// --- WEB SERVER HANDLERS ---
 void handleRoot() {
   server.send(200, "text/html", buildHtmlPage());
 }
@@ -153,73 +169,90 @@ void handleNotFound() {
   server.send(404, "text/plain", "404: Not Found");
 }
 
-// --- MAIN SETUP ---
+// --- PENGATURAN UTAMA ---
 void setup() {
   Serial.begin(115200);
-  Serial.println("\nStarting DHT11 Monitoring System...");
+  Serial.println("\nMemulai Sistem Monitoring DHT11...");
 
+  // Izinkan koneksi ke situs dengan sertifikat yang tidak aman
   securedClient.setInsecure();
 
+  // Inisialisasi LCD
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("Initializing...");
+  lcd.print("Inisialisasi...");
 
+  // Inisialisasi sensor DHT
   dht.begin();
 
+  // Atur mode WiFi ke Station dan Access Point
   WiFi.mode(WIFI_AP_STA);
   WiFi.begin(home_ssid, home_pass);
-  Serial.print("Connecting to Home Wi-Fi...");
+  Serial.print("Menyambungkan ke Wi-Fi Rumah...");
   lcd.clear();
-  lcd.print("Connecting WiFi");
+  lcd.print("Menyambungkan WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(500);
   }
-  Serial.println("\nConnected to Home Wi-Fi!");
-  Serial.print("IP Address (STA): ");
+  Serial.println("\nTerhubung ke Wi-Fi Rumah!");
+  Serial.print("Alamat IP (STA): ");
   Serial.println(WiFi.localIP());
 
+  // Mulai Access Point
   WiFi.softAP(ap_ssid, ap_pass);
-  Serial.print("Access Point Started: ");
+  Serial.print("Access Point Dimulai: ");
   Serial.println(ap_ssid);
-  Serial.print("IP Address (AP): ");
+  Serial.print("Alamat IP (AP): ");
   Serial.println(WiFi.softAPIP());
   
+  // Mulai Web Server
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
   server.begin();
-  Serial.println("HTTP server started.");
+  Serial.println("HTTP server dimulai.");
 
   lcd.clear();
-  lcd.print("System Online!");
+  lcd.print("Sistem Online!");
   lcd.setCursor(0, 1);
   lcd.print(WiFi.localIP());
   
   Serial.println("\nMelakukan pembacaan sensor pertama...");
-  sendSensorData();
+  readSensorData(); // Pembacaan awal agar data siap
 }
 
-// --- MAIN LOOP ---
+// --- LOOP UTAMA ---
 void loop() {
-  // Menangani permintaan Web Server
+  // Tangani permintaan web server yang masuk
   server.handleClient();
 
-  // BARU: Logika waktu untuk membaca sensor setiap 2 detik
   unsigned long currentMillis = millis();
+
+  // --- Aksi Berwaktu: Baca Data Sensor (setiap 2 detik) ---
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;
-    sendSensorData();
+    readSensorData();
   }
 
-  // Cek pesan baru dari Telegram secara berkala
-  if (millis() > lastTimeBotRan + botRequestDelay) {
+  // --- Aksi Berwaktu: Kirim Peringatan Suhu Tinggi (setiap 60 detik) ---
+  // Blok ini hanya berjalan jika suhu di atas ambang batas.
+  if (temperature >= 30.0) {
+    if (currentMillis - previousAlertMillis >= alertInterval) {
+      previousAlertMillis = currentMillis; // Atur ulang timer notifikasi
+      Serial.println("Suhu tinggi terdeteksi! Mengirim notifikasi terjadwal...");
+      sendHighTempAlert();
+    }
+  }
+
+  // --- Aksi Berwaktu: Periksa pesan baru Telegram (setiap 1 detik) ---
+  if (currentMillis - lastTimeBotRan >= botRequestDelay) {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
     while (numNewMessages) {
       handleNewMessages(numNewMessages);
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
-    lastTimeBotRan = millis();
+    lastTimeBotRan = currentMillis;
   }
 }
